@@ -24,13 +24,21 @@ pub struct Data {
 pub struct Attributes {
     pub created_at: String,
     pub key: String,
-    pub data: HashMap<String, String>,
+    pub data: AttributesData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AttributesData {
+    pub source: Option<String>,
+    pub current_substate: Option<String>,
+    pub blocked_by: Option<String>,
+    // add other fields as needed
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Relationships {
     pub actor: Actor,
-    pub resource: Resource,
+    pub resource: Option<Resource>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -68,14 +76,30 @@ pub struct Included {
     pub r#type: String,
     pub links: HashMap<String, String>,
     pub attributes: IncludedAttributes,
-    pub relationships: HashMap<String, String>,
+    pub relationships: Option<IncludedRelationships>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct IncludedRelationships {
+    pub resource: Option<IncludedRelationshipsResource>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct IncludedRelationshipsResource {
+    pub data: IncludedRelationshipsResourceData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct IncludedRelationshipsResourceData {
+    pub r#type: String,
+    pub id: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct IncludedAttributes {
-    pub name: String,
-    pub email: String,
-    pub staff: bool,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub staff: Option<bool>,
 }
 
 
@@ -98,28 +122,80 @@ async fn index_handler() -> &'static str  {
     "Hello, World!"
 }
 
-async fn webhook_handler(Path(id): Path<String>, Json(body): Json<EventData>) -> &'static str {
-    match get_hash_from_env() {
+async fn webhook_handler(Path(id): Path<String>, Json(body): Json<EventData>) -> String {
+    match get_from_env("HASH") {
         Ok(hash) => {
             if hash == id {
                 action_webhook_handler(body).await
             } else {
-                "Hashes don't match!"
+                format!("Hashes don't match!")
             }
         }
-        Err(_) => "Error occurred while fetching hash.",
+        Err(_) => format!("Error occurred while fetching hash."),
     }
 }
 
-async fn action_webhook_handler(body: EventData) -> &'static str {
-    if body.data.attributes.key == "blocker.updated" {
-        "Blocker updated!"
-    } else {
-        "Not a blocker updated event!"
+async fn action_webhook_handler(body: EventData) -> String {
+    let EventData { data, included } = body;
+    let Attributes { key, data: attributes_data, created_at } = data.attributes;
+    
+    let url = create_submission_url(&included[1]);
+
+    match &*key {
+        // "blocker.updated" => format!("{} {}", handle_blocker_updated(body), url),
+        "blocker.created" => format!("{} {}", handle_blocker_created(attributes_data), url),
+        // "submission.created" => handle_submission_created(body),
+        // "submission.updated" => handle_submission_updated(body),
+        _ => format!("Unknown event!")
     }
 }
 
-fn get_hash_from_env() -> Result<String, env::VarError> {
+// fn create_submission_url(submission_id: String) -> String {
+//     format!("https://tracker.bugcrowd.com/{}/submissions/{}", get_from_env("BUGCROWD_ORG").unwrap(), submission_id)
+// }
+
+fn create_submission_url(included: &Included) -> String {
+    match &included.relationships {
+        Some(relations) => match &relations.resource {
+            Some(resource) => format!("https://tracker.bugcrowd.com/{}/submissions/{}",
+                get_from_env("BUGCROWD_ORG").unwrap(),
+                resource.data.id
+            ),
+            None => String::from("Resource is None"),
+        },
+        None => String::from("Relationships are None"),
+    }
+}
+
+
+
+fn get_from_env(key: &str) -> Result<String, env::VarError> {
     dotenv().ok();
-    env::var("HASH")
+    env::var(key)
+}
+
+fn handle_blocker_created(attributes_data: AttributesData) -> String {
+    match attributes_data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => format!("Blocker created for Bugcrowd Operations!"),
+        Some(blocked_by) if blocked_by == "researcher" => format!("Blocker created for researcher!"),
+        Some(blocked_by) if blocked_by == "customer" => format!("Blocker created for customer!"),
+        _ => format!("Unknown blocker creator!")
+    }
+}
+
+fn handle_blocker_updated(body: EventData) -> String {
+    match body.data.attributes.data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => format!("Blocker created for Bugcrowd Operations!"),
+        Some(blocked_by) if blocked_by == "researcher" => format!("Blocker created for researcher!"),
+        Some(blocked_by) if blocked_by == "customer" => format!("Blocker created for customer!"),
+        _ => format!("Unknown blocker creator!")
+    }
+}
+
+fn handle_submission_created(body: EventData) -> String {
+    format!("Submission created!")
+}
+
+fn handle_submission_updated(body: EventData) -> String {
+    format!("Submission updated!")
 }
