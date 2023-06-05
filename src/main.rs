@@ -4,6 +4,8 @@ use std::env;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use slack_morphism::prelude::*;
+use url::Url;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EventData {
@@ -126,33 +128,30 @@ async fn webhook_handler(Path(id): Path<String>, Json(body): Json<EventData>) ->
     match get_from_env("HASH") {
         Ok(hash) => {
             if hash == id {
-                action_webhook_handler(body).await
+                action_webhook_handler(body).await;
+                format!("Done")
             } else {
-                format!("Hashes don't match!")
+                format!("Unauthorized")
             }
         }
         Err(_) => format!("Error occurred while fetching hash."),
     }
 }
 
-async fn action_webhook_handler(body: EventData) -> String {
+async fn action_webhook_handler(body: EventData) -> () {
     let EventData { data, included } = body;
     let Attributes { key, data: attributes_data, created_at } = data.attributes;
     
     let url = create_submission_url(&included[1]);
 
     match &*key {
-        // "blocker.updated" => format!("{} {}", handle_blocker_updated(body), url),
-        "blocker.created" => format!("{} {}", handle_blocker_created(attributes_data), url),
-        // "submission.created" => handle_submission_created(body),
-        // "submission.updated" => handle_submission_updated(body),
-        _ => format!("Unknown event!")
+        // "blocker.updated" => handle_blocker_updated(attributes_data).await,
+        "blocker.created" => handle_blocker_created(attributes_data, url).await,
+        "submission.created" => handle_submission_created(attributes_data, url).await,
+        "submission.updated" => handle_submission_updated(attributes_data, url).await,
+        _ => ()
     }
 }
-
-// fn create_submission_url(submission_id: String) -> String {
-//     format!("https://tracker.bugcrowd.com/{}/submissions/{}", get_from_env("BUGCROWD_ORG").unwrap(), submission_id)
-// }
 
 fn create_submission_url(included: &Included) -> String {
     match &included.relationships {
@@ -174,28 +173,52 @@ fn get_from_env(key: &str) -> Result<String, env::VarError> {
     env::var(key)
 }
 
-fn handle_blocker_created(attributes_data: AttributesData) -> String {
-    match attributes_data.blocked_by {
-        Some(blocked_by) if blocked_by == "bugcrowd_operations" => format!("Blocker created for Bugcrowd Operations!"),
-        Some(blocked_by) if blocked_by == "researcher" => format!("Blocker created for researcher!"),
-        Some(blocked_by) if blocked_by == "customer" => format!("Blocker created for customer!"),
-        _ => format!("Unknown blocker creator!")
-    }
+async fn handle_blocker_created(attributes_data: AttributesData, url: String) {
+    let message = match attributes_data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => "Blocker created for Bugcrowd Operations!".to_string(),
+        Some(blocked_by) if blocked_by == "researcher" => "Blocker created for researcher!".to_string(),
+        Some(blocked_by) if blocked_by == "customer" => "Blocker created for customer!".to_string(),
+        _ => "Unknown blocker creator!".to_string()
+    };
+    send_slack_message("#bugcrowd-rust-info", "Blocker Created", message, url).await;
 }
 
-fn handle_blocker_updated(body: EventData) -> String {
-    match body.data.attributes.data.blocked_by {
-        Some(blocked_by) if blocked_by == "bugcrowd_operations" => format!("Blocker created for Bugcrowd Operations!"),
-        Some(blocked_by) if blocked_by == "researcher" => format!("Blocker created for researcher!"),
-        Some(blocked_by) if blocked_by == "customer" => format!("Blocker created for customer!"),
-        _ => format!("Unknown blocker creator!")
-    }
+async fn handle_submission_created(attributes_data: AttributesData, url: String) {
+    send_slack_message("#bugcrowd-rust-info", "Submission Created", "Created ya".to_string(),url).await;
 }
 
-fn handle_submission_created(body: EventData) -> String {
-    format!("Submission created!")
+async fn handle_submission_updated(attributes_data: AttributesData, url: String) {
+    send_slack_message("#bugcrowd-rust-info", "Submission Updated", "Updated ya".to_string(),url).await;
 }
 
-fn handle_submission_updated(body: EventData) -> String {
-    format!("Submission updated!")
+async fn send_slack_message(channel: &'static str, action: &'static str, message: String, url: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let client = SlackClient::new(SlackClientHyperConnector::new());
+    
+    let token_value: SlackApiTokenValue = get_from_env("SLACK_BOT_TOKEN").unwrap().into();
+    let token: SlackApiToken = SlackApiToken::new(token_value);
+    let session = client.open_session(&token);
+
+    let post_chat_req =
+        SlackApiChatPostMessageRequest::new(channel.into(),
+               SlackMessageContent::new().with_blocks(slack_blocks![
+                some_into(SlackHeaderBlock::new(
+                    pt!(action)
+                )),
+                some_into(SlackDividerBlock::new()),
+                some_into(
+                    SlackSectionBlock::new()
+                        .with_text(md!(message))
+                ),
+                some_into(SlackActionsBlock::new(slack_blocks![some_into(
+                    SlackBlockButtonElement::new(
+                        "view-submission".into(),
+                        pt!("View Submission"),
+                    ).with_url(Url::parse(&url).unwrap())
+                )]))
+            ]),
+        );
+
+    let post_chat_resp = session.chat_post_message(&post_chat_req).await?;
+
+    Ok(())
 }
