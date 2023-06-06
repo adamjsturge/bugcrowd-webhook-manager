@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::env;
-use std::fmt::format;
 use std::net::SocketAddr;
 use url::Url;
 
@@ -183,9 +182,9 @@ async fn action_webhook_handler(body: EventData) -> () {
     } = data.attributes;
 
     let temp_include;
-    let safe_included;
+    let safe_include;
     if included.len() > 1 {
-        safe_included = &included[1];
+        safe_include = &included[1];
     } else {
         temp_include = Included {
             id: "".to_string(),
@@ -220,14 +219,14 @@ async fn action_webhook_handler(body: EventData) -> () {
             },
             relationships: None,
         };
-        safe_included = &temp_include;
+        safe_include = &temp_include;
     }
 
     match &*key {
-        "blocker.updated" => handle_blocker_updated(attributes_data, safe_included).await,
-        "blocker.created" => handle_blocker_created(attributes_data, safe_included).await,
-        "submission.created" => handle_submission_created(attributes_data, safe_included).await,
-        "submission.updated" => handle_submission_updated(attributes_data, safe_included).await,
+        "blocker.updated" => handle_blocker_updated(attributes_data, safe_include).await,
+        "blocker.created" => handle_blocker_created(attributes_data, safe_include).await,
+        "submission.created" => handle_submission_created(safe_include).await,
+        "submission.updated" => handle_submission_updated(attributes_data, safe_include).await,
         _ => (),
     }
 }
@@ -278,14 +277,17 @@ async fn handle_blocker_updated(attributes_data: AttributesData, included: &Incl
     .await;
 }
 
-async fn handle_submission_created(attributes_data: AttributesData, included: &Included) {
+async fn handle_submission_created(included: &Included) {
     let url = create_url_submission(&included.id);
     let title = &included
         .attributes
         .title
         .clone()
         .unwrap_or("Unknown Title".to_string());
-    let message = generate_change_message(&attributes_data, &included);
+    let mut message = String::new();
+    if let Some(severity) = &included.attributes.severity {
+        message.push_str(&format!("Severity: {}\n", severity));
+    }
     send_slack_message(
         get_from_env("SLACK_NEW_SUBMISSION_CHANNEL").unwrap(),
         title,
@@ -297,19 +299,32 @@ async fn handle_submission_created(attributes_data: AttributesData, included: &I
 
 async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) {
     let url = create_url_submission(&included.id);
+    // if attributes.changes.state.to was moved to Duplicate or NA then ignore
+    let mut channel = get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap();
+    if let Some(changes) = &attributes_data.changes {
+        if let Some(change) = changes.get("state") {
+            if let Some(StateChangeType::String(s)) = &change.to {
+                if s == "not-applicable" {
+                    channel = get_from_env("SLACK_DUPLICATE_NA_CHANNEL").unwrap();
+                }
+            }
+        }
+        if let Some(change) = changes.get("duplicate") {
+            if let Some(StateChangeType::Bool(s)) = &change.to {
+                if s == &true {
+                    channel = get_from_env("SLACK_DUPLICATE_NA_CHANNEL").unwrap();
+                }
+            }
+        }
+    }
+
     let title = &included
         .attributes
         .title
         .clone()
         .unwrap_or("Unknown Title".to_string());
     let message = generate_change_message(&attributes_data, &included);
-    send_slack_message(
-        get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap(),
-        title,
-        message,
-        url,
-    )
-    .await;
+    send_slack_message(channel, title, message, url).await;
 }
 
 fn generate_change_message(attributes: &AttributesData, included: &Included) -> String {
