@@ -235,12 +235,12 @@ async fn handle_blocker_created(attributes_data: AttributesData, included: &Incl
     let url = create_url_blocker(included);
 
     match attributes_data.blocked_by {
-        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
-            println!("Blocker created for Bugcrowd Operations!");
-        }
-        Some(blocked_by) if blocked_by == "researcher" => {
-            println!("Blocker created for researcher!");
-        }
+        // Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
+        //     println!("Blocker created for Bugcrowd Operations!");
+        // }
+        // Some(blocked_by) if blocked_by == "researcher" => {
+        //     println!("Blocker created for researcher!");
+        // }
         Some(blocked_by) if blocked_by == "customer" => {
             send_slack_message(
                 get_from_env("SLACK_NEW_BLOCKER_CHANNEL").unwrap(),
@@ -385,7 +385,6 @@ fn get_from_env(key: &str) -> Result<String, env::VarError> {
 }
 
 async fn send_slack_message(channel: String, title: &str, message: String, url: String) -> () {
-    println!("Sending slack message");
     let client = SlackClient::new(SlackClientHyperConnector::new());
 
     let token_value: SlackApiTokenValue = get_from_env("SLACK_BOT_TOKEN").unwrap().into();
@@ -408,13 +407,13 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
         ]),
     );
 
-    // let _ = session.chat_post_message(&post_chat_req).await;
-    match session.chat_post_message(&post_chat_req).await {
-        Ok(response) => {
-            println!("Message sent successfully: {:?}", response);
-        }
-        Err(e) => {
-            eprintln!("Failed to send message: {:?}", e);
-        }
-    }
+    let _ = session.chat_post_message(&post_chat_req).await;
+    // match session.chat_post_message(&post_chat_req).await {
+    //     Ok(response) => {
+    //         println!("Message sent successfully: {:?}", response);
+    //     }
+    //     Err(e) => {
+    //         eprintln!("Failed to send message: {:?}", e);
+    //     }
+    // }
 }
