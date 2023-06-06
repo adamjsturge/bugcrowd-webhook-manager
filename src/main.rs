@@ -299,7 +299,6 @@ async fn handle_submission_created(included: &Included) {
 
 async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) {
     let url = create_url_submission(&included.id);
-    // if attributes.changes.state.to was moved to Duplicate or NA then ignore
     let mut channel = get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap();
     if let Some(changes) = &attributes_data.changes {
         if let Some(change) = changes.get("state") {
