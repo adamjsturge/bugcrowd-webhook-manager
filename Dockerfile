@@ -32,5 +32,9 @@ RUN apt-get update \
 # Copy the build artifact from the builder stage
 COPY --from=builder /bugcrowd-webhook-manager/target/release/bugcrowd-webhook-manager .
 
+EXPOSE 3000
+
+ENV PORT 3000
+
 # Set the binary as the entrypoint of the container
 ENTRYPOINT ["./bugcrowd-webhook-manager"]
