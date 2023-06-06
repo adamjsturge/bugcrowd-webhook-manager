@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::env;
+use std::fmt::format;
 use std::net::SocketAddr;
 use url::Url;
 
@@ -228,7 +229,7 @@ async fn action_webhook_handler(body: EventData) -> () {
     }
 
     match &*key {
-        // "blocker.updated" => handle_blocker_updated(attributes_data).await,
+        "blocker.updated" => handle_blocker_updated(attributes_data, safe_included).await,
         "blocker.created" => handle_blocker_created(attributes_data, safe_included).await,
         "submission.created" => handle_submission_created(attributes_data, safe_included).await,
         "submission.updated" => handle_submission_updated(attributes_data, safe_included).await,
@@ -265,6 +266,31 @@ fn get_from_env(key: &str) -> Result<String, env::VarError> {
 
 async fn handle_blocker_created(attributes_data: AttributesData, included: &Included) {
     let url = create_url_blocker(included);
+
+    match attributes_data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
+            println!("Blocker created for Bugcrowd Operations!");
+        }
+        Some(blocked_by) if blocked_by == "researcher" => {
+            println!("Blocker created for researcher!");
+        }
+        Some(blocked_by) if blocked_by == "customer" => {
+            send_slack_message(
+                get_from_env("SLACK_NEW_BLOCKER_CHANNEL").unwrap(),
+                "Blocker Created".to_string(),
+                format!("Blocker created for customer!"),
+                url,
+            )
+            .await;
+        }
+        _ => {
+            println!("Unknown blocker creator!");
+        }
+    }
+}
+
+async fn handle_blocker_updated(attributes_data: AttributesData, included: &Included) {
+    let url = create_url_blocker(included);
     let message = match attributes_data.blocked_by {
         Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
             "Blocker created for Bugcrowd Operations!".to_string()
@@ -276,7 +302,7 @@ async fn handle_blocker_created(attributes_data: AttributesData, included: &Incl
         _ => "Unknown blocker creator!".to_string(),
     };
     send_slack_message(
-        "#bugcrowd-rust-info",
+        get_from_env("SLACK_RESOLVED_BLOCKER_CHANNEL").unwrap(),
         "Blocker Created".to_string(),
         message,
         url,
@@ -288,7 +314,7 @@ async fn handle_submission_created(attributes_data: AttributesData, included: &I
     let url = create_url_submission(&included.id);
     // let action = format!("Submission Created ")
     send_slack_message(
-        "#bugcrowd-rust-info",
+        get_from_env("SLACK_NEW_SUBMISSION_CHANNEL").unwrap(),
         "Submission Created".to_string(),
         "Created ya".to_string(),
         url,
@@ -303,15 +329,16 @@ async fn handle_submission_updated(attributes_data: AttributesData, included: &I
         &included.attributes.severity.unwrap_or(0)
     );
     // let message =
-    send_slack_message("#bugcrowd-rust-info", action, "Updated ya".to_string(), url).await;
+    send_slack_message(
+        get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap(),
+        action,
+        "Updated ya".to_string(),
+        url,
+    )
+    .await;
 }
 
-async fn send_slack_message(
-    channel: &'static str,
-    action: String,
-    message: String,
-    url: String,
-) -> () {
+async fn send_slack_message(channel: String, action: String, message: String, url: String) -> () {
     let client = SlackClient::new(SlackClientHyperConnector::new());
 
     let token_value: SlackApiTokenValue = get_from_env("SLACK_BOT_TOKEN").unwrap().into();
