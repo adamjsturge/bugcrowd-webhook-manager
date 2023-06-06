@@ -1,11 +1,37 @@
 version: '3.9'
 
 services:
-  bugcrowd-webhook-manager:
-    build: .
-    volumes:
-      - ./:/app
-    env_file:
-      - .env
-    ports:
-      - 3000:3000
+    bugcrowd-webhook-manager:
+        build: .
+        volumes:
+            - ./:/app
+        env_file:
+            - .env
+        ports:
+            - 3000:3000
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.green-openscanner-prod.entrypoints=web, websecure"
+            - "traefik.http.routers.green-openscanner-prod.rule=Host(`${MY_HOST}`)"
+            - "traefik.http.routers.green-openscanner-prod.tls.certresolver=myresolver"
+            - "traefik.http.routers.green-openscanner-prod.tls.domains[0].main=${MY_HOST}"
+            - "traefik.http.services.green-openscanner-prod.loadbalancer.server.port=3000"
+    traefik:
+        image: "traefik:v2.8"
+        container_name: "traefik"
+        command:
+            - "--providers.docker=true"
+            - "--providers.docker.exposedbydefault=false"
+            - "--entrypoints.web.address=:80"
+            - "--entrypoints.websecure.address=:443"
+            - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+            - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+            - "--certificatesresolvers.myresolver.acme.email=${MY_EMAIL}"
+            - "--certificatesresolvers.myresolver.acme.storage=/shared/acme.json"
+        ports:
+            - "80:80"
+            - "443:443"
+            # - "8080:8080" # Traefik dashboard
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock:ro"
+            - "./shared:/shared"
