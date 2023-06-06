@@ -166,16 +166,11 @@ async fn index_handler() -> &'static str {
 }
 
 async fn webhook_handler(Path(id): Path<String>, Json(body): Json<EventData>) -> String {
-    match get_from_env("HASH") {
-        Ok(hash) => {
-            if hash == id {
-                action_webhook_handler(body).await;
-                format!("Done")
-            } else {
-                format!("Unauthorized")
-            }
-        }
-        Err(_) => format!("Error occurred while fetching hash."),
+    if get_from_env("HASH").unwrap() == id {
+        action_webhook_handler(body).await;
+        format!("Done")
+    } else {
+        format!("Unauthorized")
     }
 }
 
@@ -237,6 +232,117 @@ async fn action_webhook_handler(body: EventData) -> () {
     }
 }
 
+async fn handle_blocker_created(attributes_data: AttributesData, included: &Included) {
+    let url = create_url_blocker(included);
+
+    match attributes_data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
+            println!("Blocker created for Bugcrowd Operations!");
+        }
+        Some(blocked_by) if blocked_by == "researcher" => {
+            println!("Blocker created for researcher!");
+        }
+        Some(blocked_by) if blocked_by == "customer" => {
+            send_slack_message(
+                get_from_env("SLACK_NEW_BLOCKER_CHANNEL").unwrap(),
+                "Blocker Created",
+                format!("Blocker created for customer!"),
+                url,
+            )
+            .await;
+        }
+        _ => {
+            println!("Unknown blocker creator!");
+        }
+    }
+}
+
+async fn handle_blocker_updated(attributes_data: AttributesData, included: &Included) {
+    let url = create_url_blocker(included);
+    let message = match attributes_data.blocked_by {
+        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
+            "Blocker created for Bugcrowd Operations!".to_string()
+        }
+        Some(blocked_by) if blocked_by == "researcher" => {
+            "Blocker created for researcher!".to_string()
+        }
+        Some(blocked_by) if blocked_by == "customer" => "Blocker created for customer!".to_string(),
+        _ => "Unknown blocker creator!".to_string(),
+    };
+    send_slack_message(
+        get_from_env("SLACK_RESOLVED_BLOCKER_CHANNEL").unwrap(),
+        "Blocker Created",
+        message,
+        url,
+    )
+    .await;
+}
+
+async fn handle_submission_created(attributes_data: AttributesData, included: &Included) {
+    let url = create_url_submission(&included.id);
+    let title = &included
+        .attributes
+        .title
+        .clone()
+        .unwrap_or("Unknown Title".to_string());
+    let message = generate_change_message(&attributes_data, &included);
+    send_slack_message(
+        get_from_env("SLACK_NEW_SUBMISSION_CHANNEL").unwrap(),
+        title,
+        message,
+        url,
+    )
+    .await;
+}
+
+async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) {
+    let url = create_url_submission(&included.id);
+    let title = &included
+        .attributes
+        .title
+        .clone()
+        .unwrap_or("Unknown Title".to_string());
+    let message = generate_change_message(&attributes_data, &included);
+    send_slack_message(
+        get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap(),
+        title,
+        message,
+        url,
+    )
+    .await;
+}
+
+fn generate_change_message(attributes: &AttributesData, included: &Included) -> String {
+    let mut message = String::new();
+
+    if let Some(severity) = &included.attributes.severity {
+        message.push_str(&format!("Severity: {}\n", severity));
+    }
+
+    message.push_str("Changes:\n");
+
+    if let Some(changes) = &attributes.changes {
+        for (key, change) in changes {
+            let from_value = match &change.from {
+                Some(StateChangeType::String(s)) => s.clone(),
+                Some(StateChangeType::U8(n)) => n.to_string(),
+                Some(StateChangeType::Bool(b)) => b.to_string(),
+                None => "None".to_string(),
+            };
+            let to_value = match &change.to {
+                Some(StateChangeType::String(s)) => s.clone(),
+                Some(StateChangeType::U8(n)) => n.to_string(),
+                Some(StateChangeType::Bool(b)) => b.to_string(),
+                None => "None".to_string(),
+            };
+
+            message.push_str(&format!("{}: {} -> {}\n", key, from_value, to_value));
+        }
+    }
+
+    message
+}
+
 fn create_url_submission(submission_id: &str) -> String {
     format!(
         "https://tracker.bugcrowd.com/{}/submissions/{}",
@@ -264,81 +370,8 @@ fn get_from_env(key: &str) -> Result<String, env::VarError> {
     env::var(key)
 }
 
-async fn handle_blocker_created(attributes_data: AttributesData, included: &Included) {
-    let url = create_url_blocker(included);
-
-    match attributes_data.blocked_by {
-        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
-            println!("Blocker created for Bugcrowd Operations!");
-        }
-        Some(blocked_by) if blocked_by == "researcher" => {
-            println!("Blocker created for researcher!");
-        }
-        Some(blocked_by) if blocked_by == "customer" => {
-            send_slack_message(
-                get_from_env("SLACK_NEW_BLOCKER_CHANNEL").unwrap(),
-                "Blocker Created".to_string(),
-                format!("Blocker created for customer!"),
-                url,
-            )
-            .await;
-        }
-        _ => {
-            println!("Unknown blocker creator!");
-        }
-    }
-}
-
-async fn handle_blocker_updated(attributes_data: AttributesData, included: &Included) {
-    let url = create_url_blocker(included);
-    let message = match attributes_data.blocked_by {
-        Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
-            "Blocker created for Bugcrowd Operations!".to_string()
-        }
-        Some(blocked_by) if blocked_by == "researcher" => {
-            "Blocker created for researcher!".to_string()
-        }
-        Some(blocked_by) if blocked_by == "customer" => "Blocker created for customer!".to_string(),
-        _ => "Unknown blocker creator!".to_string(),
-    };
-    send_slack_message(
-        get_from_env("SLACK_RESOLVED_BLOCKER_CHANNEL").unwrap(),
-        "Blocker Created".to_string(),
-        message,
-        url,
-    )
-    .await;
-}
-
-async fn handle_submission_created(attributes_data: AttributesData, included: &Included) {
-    let url = create_url_submission(&included.id);
-    // let action = format!("Submission Created ")
-    send_slack_message(
-        get_from_env("SLACK_NEW_SUBMISSION_CHANNEL").unwrap(),
-        "Submission Created".to_string(),
-        "Created ya".to_string(),
-        url,
-    )
-    .await;
-}
-
-async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) {
-    let url = create_url_submission(&included.id);
-    let action = format!(
-        "Submission Updated: Severity {} ",
-        &included.attributes.severity.unwrap_or(0)
-    );
-    // let message =
-    send_slack_message(
-        get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap(),
-        action,
-        "Updated ya".to_string(),
-        url,
-    )
-    .await;
-}
-
-async fn send_slack_message(channel: String, action: String, message: String, url: String) -> () {
+async fn send_slack_message(channel: String, title: &str, message: String, url: String) -> () {
+    println!("Sending slack message");
     let client = SlackClient::new(SlackClientHyperConnector::new());
 
     let token_value: SlackApiTokenValue = get_from_env("SLACK_BOT_TOKEN").unwrap().into();
@@ -348,7 +381,10 @@ async fn send_slack_message(channel: String, action: String, message: String, ur
     let post_chat_req = SlackApiChatPostMessageRequest::new(
         channel.into(),
         SlackMessageContent::new().with_blocks(slack_blocks![
-            some_into(SlackHeaderBlock::new(pt!(action))),
+            some_into(SlackHeaderBlock::new(pt!(title
+                .chars()
+                .take(150)
+                .collect::<String>()))),
             some_into(SlackDividerBlock::new()),
             some_into(SlackSectionBlock::new().with_text(md!(message))),
             some_into(SlackActionsBlock::new(slack_blocks![some_into(
@@ -358,5 +394,13 @@ async fn send_slack_message(channel: String, action: String, message: String, ur
         ]),
     );
 
-    let _ = session.chat_post_message(&post_chat_req).await;
+    // let _ = session.chat_post_message(&post_chat_req).await;
+    match session.chat_post_message(&post_chat_req).await {
+        Ok(response) => {
+            println!("Message sent successfully: {:?}", response);
+        }
+        Err(e) => {
+            eprintln!("Failed to send message: {:?}", e);
+        }
+    }
 }
