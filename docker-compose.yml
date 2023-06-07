@@ -11,11 +11,11 @@ services:
             - 3000:3000
         labels:
             - "traefik.enable=true"
-            - "traefik.http.routers.green-openscanner-prod.entrypoints=web, websecure"
-            - "traefik.http.routers.green-openscanner-prod.rule=Host(`${MY_HOST}`)"
-            - "traefik.http.routers.green-openscanner-prod.tls.certresolver=myresolver"
-            - "traefik.http.routers.green-openscanner-prod.tls.domains[0].main=${MY_HOST}"
-            - "traefik.http.services.green-openscanner-prod.loadbalancer.server.port=3000"
+            - "traefik.http.routers.bugcrowd-webhook-manager.entrypoints=web, websecure"
+            - "traefik.http.routers.bugcrowd-webhook-manager.rule=Host(`${MY_HOST}`)"
+            - "traefik.http.routers.bugcrowd-webhook-manager.tls.certresolver=myresolver"
+            - "traefik.http.routers.bugcrowd-webhook-manager.tls.domains[0].main=${MY_HOST}"
+            - "traefik.http.services.bugcrowd-webhook-manager.loadbalancer.server.port=3000"
     traefik:
         image: "traefik:v2.8"
         container_name: "traefik"
