@@ -166,14 +166,13 @@ async fn index_handler() -> &'static str {
 
 async fn webhook_handler(Path(id): Path<String>, Json(body): Json<EventData>) -> String {
     if get_from_env("HASH").unwrap() == id {
-        action_webhook_handler(body).await;
-        format!("Done")
+        action_webhook_handler(body).await
     } else {
         format!("Unauthorized")
     }
 }
 
-async fn action_webhook_handler(body: EventData) -> () {
+async fn action_webhook_handler(body: EventData) -> String {
     let EventData { data, included } = body;
     let Attributes {
         key,
@@ -227,11 +226,11 @@ async fn action_webhook_handler(body: EventData) -> () {
         "blocker.created" => handle_blocker_created(attributes_data, safe_include).await,
         "submission.created" => handle_submission_created(safe_include).await,
         "submission.updated" => handle_submission_updated(attributes_data, safe_include).await,
-        _ => (),
+        _ => "Key not valid".to_string(),
     }
 }
 
-async fn handle_blocker_created(attributes_data: AttributesData, included: &Included) {
+async fn handle_blocker_created(attributes_data: AttributesData, included: &Included) -> String {
     let url = create_url_blocker(included);
 
     match attributes_data.blocked_by {
@@ -248,15 +247,13 @@ async fn handle_blocker_created(attributes_data: AttributesData, included: &Incl
                 format!("Blocker created for customer!"),
                 url,
             )
-            .await;
+            .await
         }
-        _ => {
-            println!("Unknown blocker creator!");
-        }
+        _ => "Not for customer".to_string(),
     }
 }
 
-async fn handle_blocker_updated(attributes_data: AttributesData, included: &Included) {
+async fn handle_blocker_updated(attributes_data: AttributesData, included: &Included) -> String {
     let url = create_url_blocker(included);
     let message = match attributes_data.blocked_by {
         Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
@@ -274,10 +271,10 @@ async fn handle_blocker_updated(attributes_data: AttributesData, included: &Incl
         message,
         url,
     )
-    .await;
+    .await
 }
 
-async fn handle_submission_created(included: &Included) {
+async fn handle_submission_created(included: &Included) -> String {
     let url = create_url_submission(&included.id);
     let title = &included
         .attributes
@@ -294,10 +291,10 @@ async fn handle_submission_created(included: &Included) {
         message,
         url,
     )
-    .await;
+    .await
 }
 
-async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) {
+async fn handle_submission_updated(attributes_data: AttributesData, included: &Included) -> String {
     let url = create_url_submission(&included.id);
     let mut channel = get_from_env("SLACK_PENDING_SUBMISSION_UPDATE_CHANNEL").unwrap();
     if let Some(changes) = &attributes_data.changes {
@@ -323,7 +320,7 @@ async fn handle_submission_updated(attributes_data: AttributesData, included: &I
         .clone()
         .unwrap_or("Unknown Title".to_string());
     let message = generate_change_message(&attributes_data, &included);
-    send_slack_message(channel, title, message, url).await;
+    send_slack_message(channel, title, message, url).await
 }
 
 fn generate_change_message(attributes: &AttributesData, included: &Included) -> String {
@@ -384,7 +381,7 @@ fn get_from_env(key: &str) -> Result<String, env::VarError> {
     env::var(key)
 }
 
-async fn send_slack_message(channel: String, title: &str, message: String, url: String) -> () {
+async fn send_slack_message(channel: String, title: &str, message: String, url: String) -> String {
     let client = SlackClient::new(SlackClientHyperConnector::new());
 
     let token_value: SlackApiTokenValue = get_from_env("SLACK_BOT_TOKEN").unwrap().into();
@@ -407,13 +404,12 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
         ]),
     );
 
-    let _ = session.chat_post_message(&post_chat_req).await;
-    // match session.chat_post_message(&post_chat_req).await {
-    //     Ok(response) => {
-    //         println!("Message sent successfully: {:?}", response);
-    //     }
-    //     Err(e) => {
-    //         eprintln!("Failed to send message: {:?}", e);
-    //     }
-    // }
+    match session.chat_post_message(&post_chat_req).await {
+        Ok(_response) => {
+            format!("Message sent successfully")
+        }
+        Err(e) => {
+            format!("Failed to send message: {:?}", e)
+        }
+    }
 }

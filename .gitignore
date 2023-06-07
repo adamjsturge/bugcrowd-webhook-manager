@@ -17,3 +17,5 @@ Cargo.lock
 
 /shared/
 /shared/acme.json
+
+.DS_Store
