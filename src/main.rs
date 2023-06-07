@@ -257,17 +257,19 @@ async fn handle_blocker_updated(attributes_data: AttributesData, included: &Incl
     let url = create_url_blocker(included);
     let message = match attributes_data.blocked_by {
         Some(blocked_by) if blocked_by == "bugcrowd_operations" => {
-            "Blocker created for Bugcrowd Operations!".to_string()
+            "Blocker resolved for Bugcrowd Operations!".to_string()
         }
         Some(blocked_by) if blocked_by == "researcher" => {
-            "Blocker created for researcher!".to_string()
+            "Blocker resolved for researcher!".to_string()
         }
-        Some(blocked_by) if blocked_by == "customer" => "Blocker created for customer!".to_string(),
-        _ => "Unknown blocker creator!".to_string(),
+        Some(blocked_by) if blocked_by == "customer" => {
+            "Blocker resolved for customer!".to_string()
+        }
+        _ => "Unknown blocker resolved!".to_string(),
     };
     send_slack_message(
         get_from_env("SLACK_RESOLVED_BLOCKER_CHANNEL").unwrap(),
-        "Blocker Created",
+        "Blocker Resolved",
         message,
         url,
     )
