@@ -183,7 +183,11 @@ async fn action_webhook_handler(body: EventData) -> String {
     let temp_include;
     let safe_include;
     if included.len() > 1 {
-        safe_include = &included[1];
+        // if key starts with blocker do included 0 and else do included 1
+        safe_include = match key.starts_with("blocker") {
+            true => &included[0],
+            false => &included[1],
+        };
     } else {
         temp_include = Included {
             id: "".to_string(),
@@ -365,6 +369,9 @@ fn create_url_submission(submission_id: &str) -> String {
 }
 
 fn create_url_blocker(included: &Included) -> String {
+    // print!("{:?}", included);
+    println!("{:?}", included);
+    print!("---{:?}----", included.relationships);
     match &included.relationships {
         Some(relations) => match &relations.resource {
             Some(resource) => format!(
@@ -390,6 +397,19 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
     let token: SlackApiToken = SlackApiToken::new(token_value);
     let session = client.open_session(&token);
 
+    // Check url is not empty or invalid then set it to parsed_url variable
+    let parsed_url = match Url::parse(&url) {
+        Ok(url) => url,
+        Err(e) => {
+            println!("Error parsing url: {:?}", e);
+            let temp_url = format!(
+                "https://tracker.bugcrowd.com/{}/submissions/",
+                get_from_env("BUGCROWD_ORG").unwrap()
+            );
+            Url::parse(&temp_url).unwrap()
+        }
+    };
+
     let post_chat_req = SlackApiChatPostMessageRequest::new(
         channel.into(),
         SlackMessageContent::new().with_blocks(slack_blocks![
@@ -401,7 +421,7 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
             some_into(SlackSectionBlock::new().with_text(md!(message))),
             some_into(SlackActionsBlock::new(slack_blocks![some_into(
                 SlackBlockButtonElement::new("view-submission".into(), pt!("View Submission"),)
-                    .with_url(Url::parse(&url).unwrap())
+                    .with_url(parsed_url)
             )]))
         ]),
     );
