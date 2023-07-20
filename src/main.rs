@@ -369,9 +369,6 @@ fn create_url_submission(submission_id: &str) -> String {
 }
 
 fn create_url_blocker(included: &Included) -> String {
-    // print!("{:?}", included);
-    println!("{:?}", included);
-    print!("---{:?}----", included.relationships);
     match &included.relationships {
         Some(relations) => match &relations.resource {
             Some(resource) => format!(
@@ -411,7 +408,7 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
     };
 
     let post_chat_req = SlackApiChatPostMessageRequest::new(
-        channel.into(),
+        channel.clone().into(),
         SlackMessageContent::new().with_blocks(slack_blocks![
             some_into(SlackHeaderBlock::new(pt!(title
                 .chars()
@@ -428,7 +425,7 @@ async fn send_slack_message(channel: String, title: &str, message: String, url: 
 
     match session.chat_post_message(&post_chat_req).await {
         Ok(_response) => {
-            format!("Message sent successfully")
+            format!("Message sent successfully to {}", channel)
         }
         Err(e) => {
             format!("Failed to send message: {:?}", e)
