@@ -1,5 +1,5 @@
 # Bugcrowd Webhook Manager
-Basically an easy way to split up webhook requests from bugcrowd into more webhooks
+Basically an easy way to split up webhook requests from bugcrowd into different slack channels.
 
 ## Setup
 Copy the .env.copy to .env and fill in the values
